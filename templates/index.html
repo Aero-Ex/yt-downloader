@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Downloader - Download Videos & Audio</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="2"/>
+                    <path d="M10 8L16 12L10 16V8Z" fill="currentColor"/>
+                </svg>
+                <h1>YouTube Downloader</h1>
+            </div>
+            <p class="subtitle">Download videos and audio with advanced options</p>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- URL Input Section -->
+            <section class="url-section card">
+                <div class="input-group">
+                    <input
+                        type="text"
+                        id="videoUrl"
+                        class="url-input"
+                        placeholder="Paste YouTube URL here (e.g., https://youtube.com/watch?v=...)"
+                        autocomplete="off"
+                    >
+                    <button id="fetchInfoBtn" class="btn btn-primary">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                            <path d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                        Fetch Info
+                    </button>
+                </div>
+            </section>
+
+            <!-- Video Info Section -->
+            <section id="videoInfoSection" class="video-info-section card hidden">
+                <div class="video-info-content">
+                    <img id="videoThumbnail" class="video-thumbnail" src="" alt="Video thumbnail">
+                    <div class="video-details">
+                        <h2 id="videoTitle" class="video-title"></h2>
+                        <div class="video-meta">
+                            <span id="videoUploader" class="meta-item"></span>
+                            <span id="videoDuration" class="meta-item"></span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Download Options Section -->
+            <section id="downloadOptionsSection" class="download-options-section card hidden">
+                <h3 class="section-title">Download Options</h3>
+
+                <!-- Format Type -->
+                <div class="option-group">
+                    <label class="option-label">Format Type</label>
+                    <div class="button-group">
+                        <button class="btn-option active" data-type="video">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                <rect x="2" y="3" width="20" height="14" rx="2" stroke="currentColor" stroke-width="2"/>
+                                <path d="M2 17H22" stroke="currentColor" stroke-width="2"/>
+                            </svg>
+                            Video
+                        </button>
+                        <button class="btn-option" data-type="audio">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                <path d="M9 18V5L21 3V16M9 18C9 19.6569 7.65685 21 6 21C4.34315 21 3 19.6569 3 18C3 16.3431 4.34315 15 6 15C7.65685 15 9 16.3431 9 18ZM21 16C21 17.6569 19.6569 19 18 19C16.3431 19 15 17.6569 15 16C15 14.3431 16.3431 13 18 13C19.6569 13 21 14.3431 21 16Z" stroke="currentColor" stroke-width="2"/>
+                            </svg>
+                            Audio Only
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Quality Selection -->
+                <div class="option-group">
+                    <label class="option-label">Quality</label>
+                    <select id="qualitySelect" class="select-input">
+                        <option value="best">Best Quality</option>
+                        <option value="2160p">4K (2160p)</option>
+                        <option value="1440p">2K (1440p)</option>
+                        <option value="1080p">1080p (Full HD)</option>
+                        <option value="720p">720p (HD)</option>
+                        <option value="480p">480p</option>
+                        <option value="360p">360p</option>
+                        <option value="worst">Lowest Quality</option>
+                    </select>
+                </div>
+
+                <!-- Custom Duration with Visual Trimming -->
+                <div class="option-group">
+                    <label class="option-label">
+                        Custom Duration (Optional)
+                        <span class="option-hint">Drag handles to trim video</span>
+                    </label>
+
+                    <!-- Visual Timeline Slider -->
+                    <div class="timeline-container" id="timelineContainer">
+                        <div class="timeline-header">
+                            <span class="timeline-label">Full Video</span>
+                            <span class="timeline-duration" id="timelineTotalDuration">0:00</span>
+                        </div>
+
+                        <div class="timeline-track" id="timelineTrack">
+                            <div class="timeline-background"></div>
+                            <div class="timeline-selection" id="timelineSelection">
+                                <div class="timeline-handle timeline-handle-start" id="handleStart">
+                                    <div class="handle-tooltip" id="tooltipStart">0:00</div>
+                                </div>
+                                <div class="timeline-selected-region"></div>
+                                <div class="timeline-handle timeline-handle-end" id="handleEnd">
+                                    <div class="handle-tooltip" id="tooltipEnd">0:00</div>
+                                </div>
+                            </div>
+                            <div class="timeline-markers" id="timelineMarkers"></div>
+                        </div>
+
+                        <div class="timeline-info">
+                            <div class="timeline-info-item">
+                                <span class="info-label">Selected Duration:</span>
+                                <span class="info-value" id="selectedDuration">Full Video</span>
+                            </div>
+                            <div class="timeline-info-item">
+                                <span class="info-label">Trimming:</span>
+                                <span class="info-value" id="trimmingRange">None</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Manual Time Inputs (Hidden by default, shown on advanced toggle) -->
+                    <div class="time-inputs-wrapper">
+                        <button type="button" class="btn-toggle-manual" id="toggleManualTime">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                <path d="M12 8V12L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+                            </svg>
+                            Enter Time Manually
+                        </button>
+
+                        <div class="time-inputs hidden" id="manualTimeInputs">
+                            <div class="time-input-group">
+                                <label for="startTime" class="time-label">Start Time (HH:MM:SS)</label>
+                                <input
+                                    type="text"
+                                    id="startTime"
+                                    class="time-input"
+                                    placeholder="00:00:00"
+                                    pattern="[0-9]{2}:[0-9]{2}:[0-9]{2}"
+                                >
+                            </div>
+                            <div class="time-input-group">
+                                <label for="endTime" class="time-label">End Time (HH:MM:SS)</label>
+                                <input
+                                    type="text"
+                                    id="endTime"
+                                    class="time-input"
+                                    placeholder="00:00:00"
+                                    pattern="[0-9]{2}:[0-9]{2}:[0-9]{2}"
+                                >
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Download Button -->
+                <button id="downloadBtn" class="btn btn-download">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 3V16M12 16L16 12M12 16L8 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M3 17V19C3 20.1046 3.89543 21 5 21H19C20.1046 21 21 20.1046 21 19V17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                    Start Download
+                </button>
+            </section>
+
+            <!-- Progress Section -->
+            <section id="progressSection" class="progress-section card hidden">
+                <h3 class="section-title">Download Progress</h3>
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div id="progressBarFill" class="progress-bar-fill"></div>
+                    </div>
+                    <div class="progress-info">
+                        <span id="progressPercent">0%</span>
+                        <span id="progressSpeed">Speed: --</span>
+                        <span id="progressEta">ETA: --</span>
+                    </div>
+                    <div id="progressStatus" class="progress-status">Initializing...</div>
+                </div>
+            </section>
+
+            <!-- Download Complete Section -->
+            <section id="completeSection" class="complete-section card hidden">
+                <div class="success-icon">
+                    <svg width="60" height="60" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                        <path d="M8 12L11 15L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <h3 class="success-title">Download Complete!</h3>
+                <p id="downloadedFileName" class="downloaded-filename"></p>
+                <button id="downloadFileBtn" class="btn btn-primary">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 3V16M12 16L16 12M12 16L8 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M3 17V19C3 20.1046 3.89543 21 5 21H19C20.1046 21 21 20.1046 21 19V17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                    Download File
+                </button>
+                <button id="downloadAnotherBtn" class="btn btn-secondary">
+                    Download Another
+                </button>
+            </section>
+
+            <!-- Error Section -->
+            <section id="errorSection" class="error-section card hidden">
+                <div class="error-icon">
+                    <svg width="60" height="60" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                        <path d="M12 8V12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <circle cx="12" cy="16" r="1" fill="currentColor"/>
+                    </svg>
+                </div>
+                <h3 class="error-title">Error</h3>
+                <p id="errorMessage" class="error-message"></p>
+                <button id="tryAgainBtn" class="btn btn-secondary">
+                    Try Again
+                </button>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Powered by <strong>yt-dlp</strong> | For educational purposes only</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
