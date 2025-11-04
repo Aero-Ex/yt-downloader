@@ -63,7 +63,6 @@ class YouTubeDownloader:
         opts = {
             # Anti-bot measures
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
         }
 
         # Add cookies if file exists
@@ -152,19 +151,26 @@ class YouTubeDownloader:
         Returns:
             Path to downloaded file
         """
-        # Build format string based on type
+        # Build format string based on type with better fallbacks
         if format_type == "audio":
             format_string = "bestaudio/best"
         elif format_type == "video":
             if quality == "best":
-                format_string = "bestvideo+bestaudio/best"
+                # Try best video+audio, fallback to best single file
+                format_string = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
             elif quality == "worst":
                 format_string = "worstvideo+worstaudio/worst"
             else:
-                # Custom quality (e.g., "720p", "1080p")
-                format_string = f"bestvideo[height<={quality.replace('p', '')}]+bestaudio/best"
+                # Custom quality (e.g., "720p", "1080p") with multiple fallbacks
+                height = quality.replace('p', '')
+                format_string = (
+                    f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/"
+                    f"bestvideo[height<={height}]+bestaudio/"
+                    f"best[height<={height}]/"
+                    "best"
+                )
         else:
-            format_string = "bestvideo+bestaudio/best"
+            format_string = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
 
         # Base options with anti-bot measures
         ydl_opts = self._get_base_opts()
