@@ -723,6 +723,9 @@ function displayVideoInfo(info) {
     videoDuration.textContent = `⏱️ ${info.duration}`;
     videoInfoSection.classList.remove('hidden');
 
+    // Re-enable download button (in case it was disabled from previous attempt)
+    downloadBtn.disabled = false;
+
     // Initialize the timeline trimmer with video duration
     if (info.duration_seconds) {
         initializeTimeline(info.duration_seconds);
