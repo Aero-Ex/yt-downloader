@@ -73,16 +73,31 @@ class YouTubeDownloader:
                 'Sec-Fetch-Mode': 'navigate',
             },
 
-            # Network options to appear more human-like
-            'sleep_interval': 1,  # Sleep between requests
-            'max_sleep_interval': 3,
-            'sleep_interval_requests': 1,  # Sleep between fragment requests
+            # Network options - OPTIMIZED FOR SPEED
+            # Only use minimal delays when cookies are present
+            'sleep_interval': 0,  # No delay when we have cookies
+            'max_sleep_interval': 0,
+            'sleep_interval_requests': 0,  # No delay between fragments
 
             # Use IPv4 to avoid some detection
             'source_address': '0.0.0.0',
 
             # Extract formats without downloading (helps with rate limiting)
             'extract_flat': False,
+
+            # Performance optimizations
+            'concurrent_fragment_downloads': 8,  # Download up to 8 fragments at once
+            'http_chunk_size': 10485760,  # 10MB chunks (YouTube's limit)
+            'noprogress': False,  # We want progress updates
+
+            # YouTube-specific optimizations
+            # Note: Removed restrictive player_client settings to ensure compatibility
+            # with all video types (some videos only work with certain clients)
+            'extractor_args': {
+                'youtube': {
+                    'skip': ['hls'],  # Only skip HLS, allow all clients
+                }
+            },
         }
 
         # Add proxy if configured (helps bypass datacenter IP detection)
@@ -119,6 +134,8 @@ class YouTubeDownloader:
         ydl_opts.update({
             'quiet': True,
             'no_warnings': True,
+            'skip_download': True,  # Explicitly skip download for speed
+            'format': 'best',  # Don't be picky about format when just getting info
         })
 
         try:
@@ -207,34 +224,57 @@ class YouTubeDownloader:
             else:
                 # Custom quality (e.g., "720p", "1080p") with multiple fallbacks
                 height = quality.replace('p', '')
+                # IMPORTANT: Try single-file formats FIRST (for videos without separate streams)
                 if ext == 'mp4':
                     format_string = (
-                        f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/"
-                        f"bestvideo[height<={height}]+bestaudio/"
+                        f"best[height<={height}][ext=mp4]/"  # Try single mp4 file first
                         f"best[height<={height}]/"
+                        f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/"
+                        f"bestvideo[height<={height}][ext=mp4]+bestaudio/"
+                        f"bestvideo[height<={height}]+bestaudio[ext=m4a]/"
+                        f"bestvideo[height<={height}]+bestaudio/"
+                        "best[ext=mp4]/"
                         "best"
                     )
                 elif ext == 'webm':
                     format_string = (
-                        f"bestvideo[height<={height}][ext=webm]+bestaudio[ext=webm]/"
-                        f"bestvideo[height<={height}]+bestaudio/"
+                        f"best[height<={height}][ext=webm]/"  # Try single webm file first
                         f"best[height<={height}]/"
+                        f"bestvideo[height<={height}][ext=webm]+bestaudio[ext=webm]/"
+                        f"bestvideo[height<={height}][ext=webm]+bestaudio/"
+                        f"bestvideo[height<={height}]+bestaudio/"
+                        "best[ext=webm]/"
                         "best"
                     )
                 else:  # mkv or fallback
                     format_string = (
+                        f"best[height<={height}]/"  # Try single file first
                         f"bestvideo[height<={height}]+bestaudio/"
-                        f"best[height<={height}]/"
                         "best"
                     )
         else:
             ext = format if format in ['mp4', 'webm', 'mkv'] else 'mp4'
+            # Use more permissive format strings with better fallbacks
+            # IMPORTANT: Try single-file formats FIRST (for videos without separate streams)
             if ext == 'mp4':
-                format_string = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
+                format_string = (
+                    "best[ext=mp4]/"  # Try single mp4 file first
+                    "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+                    "bestvideo[ext=mp4]+bestaudio/"
+                    "bestvideo+bestaudio[ext=m4a]/"
+                    "bestvideo+bestaudio/"
+                    "best"
+                )
             elif ext == 'webm':
-                format_string = "bestvideo[ext=webm]+bestaudio[ext=webm]/bestvideo+bestaudio/best"
+                format_string = (
+                    "best[ext=webm]/"  # Try single webm file first
+                    "bestvideo[ext=webm]+bestaudio[ext=webm]/"
+                    "bestvideo[ext=webm]+bestaudio/"
+                    "bestvideo+bestaudio/"
+                    "best"
+                )
             else:
-                format_string = "bestvideo+bestaudio/best"
+                format_string = "best/bestvideo+bestaudio"
 
         # Base options with anti-bot measures
         ydl_opts = self._get_base_opts()
@@ -244,6 +284,10 @@ class YouTubeDownloader:
             'progress_hooks': [self._progress_hook],
             'quiet': False,
             'no_warnings': False,
+            # Additional options to handle YouTube's format restrictions
+            'allow_unplayable_formats': False,  # Skip unplayable formats
+            'check_formats': 'selected',  # Only check selected format
+            'ignoreerrors': False,  # Don't ignore errors, but fallback will handle them
         })
 
         # Add audio extraction for audio-only
@@ -333,6 +377,27 @@ class YouTubeDownloader:
                     final_filename = ydl.prepare_filename(info)
 
                 return final_filename
+        except yt_dlp.utils.DownloadError as e:
+            error_msg = str(e)
+            # If format not available, try with simple "best" format as last resort
+            if "Requested format is not available" in error_msg or "No video formats found" in error_msg:
+                print(f"⚠ Requested format not available, retrying with best available format...")
+                ydl_opts['format'] = 'best'  # Simplest fallback
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(url, download=True)
+                        base_filename = ydl.prepare_filename(info)
+                        base_filename = base_filename.rsplit('.', 1)[0]
+                        if format_type == "audio":
+                            audio_ext = format if format in ['mp3', 'm4a', 'opus', 'flac'] else 'mp3'
+                            final_filename = base_filename + f'.{audio_ext}'
+                        else:
+                            final_filename = ydl.prepare_filename(info)
+                        return final_filename
+                except Exception as retry_error:
+                    raise Exception(f"Download failed even with best format fallback: {str(retry_error)}")
+            else:
+                raise Exception(f"Download failed: {error_msg}")
         except Exception as e:
             raise Exception(f"Download failed: {str(e)}")
 

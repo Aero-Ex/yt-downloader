@@ -374,6 +374,7 @@ body {
     overflow: hidden;
     background: #000;
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    touch-action: pan-y; /* Allow vertical scrolling but not horizontal */
 }
 
 /* Thumbnail strip */
@@ -461,6 +462,10 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    touch-action: none; /* Prevent default touch behaviors */
+    user-select: none; /* Prevent text selection */
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
 }
 
 .timeline-handle:hover {
@@ -1084,12 +1089,17 @@ body {
     }
 
     .timeline-handle {
-        width: 20px; /* Much wider for easier touch */
+        width: 24px; /* Much wider for easier touch - increased from 20px */
+        /* Add padding for larger touch target without changing visual size */
+        padding: 0 8px;
+        margin: 0 -8px;
     }
 
     .timeline-handle:hover,
-    .timeline-handle:active {
-        width: 24px; /* Even wider when active */
+    .timeline-handle:active,
+    .timeline-handle.dragging {
+        width: 28px; /* Even wider when active */
+        background: #5bb7ff;
     }
 
     .handle-grip {

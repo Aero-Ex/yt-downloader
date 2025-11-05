@@ -226,24 +226,42 @@ document.addEventListener('mousemove', onDrag);
 document.addEventListener('mouseup', stopDragging);
 
 // Touch support for mobile
-handleStart.addEventListener('touchstart', (e) => {
-    e.preventDefault(); // Prevent scrolling while dragging
-    startDragging(e.touches[0], 'start');
-}, { passive: false });
+if (handleStart) {
+    handleStart.addEventListener('touchstart', (e) => {
+        console.log('Touch start on handleStart');
+        e.preventDefault(); // Prevent scrolling while dragging
+        e.stopPropagation(); // Stop event from bubbling
+        startDragging(e.touches[0], 'start');
+    }, { passive: false });
+}
 
-handleEnd.addEventListener('touchstart', (e) => {
-    e.preventDefault(); // Prevent scrolling while dragging
-    startDragging(e.touches[0], 'end');
-}, { passive: false });
+if (handleEnd) {
+    handleEnd.addEventListener('touchstart', (e) => {
+        console.log('Touch start on handleEnd');
+        e.preventDefault(); // Prevent scrolling while dragging
+        e.stopPropagation(); // Stop event from bubbling
+        startDragging(e.touches[0], 'end');
+    }, { passive: false });
+}
 
 document.addEventListener('touchmove', (e) => {
     if (isDragging) {
+        console.log('Touch move:', e.touches[0].clientX);
         e.preventDefault(); // Prevent scrolling while dragging
+        e.stopPropagation();
         onDrag(e.touches[0]);
     }
 }, { passive: false });
 
-document.addEventListener('touchend', stopDragging);
+document.addEventListener('touchend', (e) => {
+    console.log('Touch end');
+    stopDragging();
+});
+
+document.addEventListener('touchcancel', (e) => {
+    console.log('Touch cancel');
+    stopDragging();
+});
 
 // Manual time input sync
 startTimeInput.addEventListener('input', syncTimelineFromInputs);
@@ -405,7 +423,8 @@ function preloadFramePreviews(videoId, thumbnailUrl) {
 }
 
 function startDragging(e, target) {
-    e.preventDefault();
+    // Don't call preventDefault here - it's already called in the event listener
+    console.log('startDragging called:', target, 'isDragging:', isDragging);
     isDragging = true;
     dragTarget = target;
     document.body.style.cursor = 'grabbing';
@@ -416,6 +435,7 @@ function startDragging(e, target) {
     } else {
         handleEnd.classList.add('dragging');
     }
+    console.log('Dragging started. isDragging:', isDragging, 'dragTarget:', dragTarget);
 }
 
 function stopDragging() {
@@ -470,10 +490,12 @@ function showPreviewUpdateFlash() {
 function onDrag(e) {
     if (!isDragging || !dragTarget) return;
 
-    e.preventDefault();
+    // Don't call preventDefault here - it's already called in the event listener
 
     const rect = timelineTrack.getBoundingClientRect();
-    const x = (e.clientX || e.pageX) - rect.left;
+    // For touch events, clientX is directly on the touch object
+    // For mouse events, it's on the event object
+    const x = (e.clientX !== undefined ? e.clientX : e.pageX) - rect.left;
     const percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
 
     // Get current positions
