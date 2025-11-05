@@ -333,13 +333,9 @@ function updateQualityOptions(formatType) {
             <option value="mp4">MP4 (Most Compatible)</option>
             <option value="webm">WebM (Smaller Size)</option>
             <option value="mkv">MKV (Best Quality)</option>
-            <option value="avi">AVI (Universal)</option>
-            <option value="mov">MOV (QuickTime)</option>
-            <option value="flv">FLV (Flash Video)</option>
-            <option value="3gp">3GP (Mobile)</option>
         `;
         // Try to restore format if it was a video format
-        if (['mp4', 'webm', 'mkv', 'avi', 'mov', 'flv', '3gp'].includes(currentFormatValue)) {
+        if (['mp4', 'webm', 'mkv'].includes(currentFormatValue)) {
             formatSelect.value = currentFormatValue;
         } else {
             formatSelect.value = 'mp4';
