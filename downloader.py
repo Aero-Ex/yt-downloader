@@ -376,17 +376,33 @@ class YouTubeDownloader:
                 # Verify the file exists at expected location
                 # (postprocessors might have created it with a different extension)
                 if not os.path.exists(final_filename):
+                    print(f"⚠ File not found at expected location: {final_filename}")
                     # Check for possible alternative extensions after postprocessing
                     import pathlib
                     base_path = pathlib.Path(final_filename).parent / pathlib.Path(final_filename).stem
+                    print(f"⚠ Searching for file with base: {base_path}")
 
                     # Try to find the actual file
+                    found = False
                     for possible_ext in [format, 'mp4', 'webm', 'mkv', 'avi', 'mov', 'flv', '3gp']:
                         possible_file = str(base_path) + f'.{possible_ext}'
                         if os.path.exists(possible_file):
+                            print(f"✓ Found file: {possible_file}")
                             final_filename = possible_file
+                            found = True
                             break
 
+                    if not found:
+                        # List all files in the directory to help debug
+                        try:
+                            dir_path = pathlib.Path(final_filename).parent
+                            if dir_path.exists():
+                                files = list(dir_path.glob('*'))
+                                print(f"⚠ Available files in {dir_path}: {[f.name for f in files]}")
+                        except Exception as e:
+                            print(f"⚠ Error listing directory: {e}")
+
+                print(f"✓ Returning filename: {final_filename}")
                 return final_filename
         except yt_dlp.utils.DownloadError as e:
             error_msg = str(e)
