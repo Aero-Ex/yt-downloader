@@ -73,16 +73,30 @@ class YouTubeDownloader:
                 'Sec-Fetch-Mode': 'navigate',
             },
 
-            # Network options to appear more human-like
-            'sleep_interval': 1,  # Sleep between requests
-            'max_sleep_interval': 3,
-            'sleep_interval_requests': 1,  # Sleep between fragment requests
+            # Network options - OPTIMIZED FOR SPEED
+            # Only use minimal delays when cookies are present
+            'sleep_interval': 0,  # No delay when we have cookies
+            'max_sleep_interval': 0,
+            'sleep_interval_requests': 0,  # No delay between fragments
 
             # Use IPv4 to avoid some detection
             'source_address': '0.0.0.0',
 
             # Extract formats without downloading (helps with rate limiting)
             'extract_flat': False,
+
+            # Performance optimizations
+            'concurrent_fragment_downloads': 8,  # Download up to 8 fragments at once
+            'http_chunk_size': 10485760,  # 10MB chunks (YouTube's limit)
+            'noprogress': False,  # We want progress updates
+
+            # YouTube-specific optimizations to avoid trying multiple clients
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'web'],  # Try android first (faster), fallback to web
+                    'skip': ['hls', 'dash'],  # Skip slow protocols if not needed
+                }
+            },
         }
 
         # Add proxy if configured (helps bypass datacenter IP detection)
@@ -119,6 +133,7 @@ class YouTubeDownloader:
         ydl_opts.update({
             'quiet': True,
             'no_warnings': True,
+            'skip_download': True,  # Explicitly skip download for speed
         })
 
         try:
