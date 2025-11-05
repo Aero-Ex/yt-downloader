@@ -91,12 +91,11 @@ class YouTubeDownloader:
             'noprogress': False,  # We want progress updates
 
             # YouTube-specific optimizations
-            # Use iOS and mobile web clients which handle SABR streaming and cookies better
-            # iOS client works well with cookies and doesn't have signature extraction issues
+            # Allow all clients and formats for maximum compatibility
+            # HLS formats are actually useful as fallbacks when DASH fails
             'extractor_args': {
                 'youtube': {
-                    'skip': ['hls'],  # Skip HLS streams
-                    'player_client': ['ios', 'mweb', 'web'],  # iOS and mobile web work better with cookies
+                    # Don't skip any formats - we need all options available
                 }
             },
         }
@@ -223,6 +222,7 @@ class YouTubeDownloader:
             Path to downloaded file
         """
         # Build format string based on type with better fallbacks
+        # Priority: Combined formats > Merged DASH > HLS as last resort
         if format_type == "audio":
             format_string = "bestaudio/best"
         elif format_type == "video":
@@ -230,69 +230,23 @@ class YouTubeDownloader:
             ext = format if format in ['mp4', 'webm', 'mkv'] else 'mp4'
 
             if quality == "best":
-                # Try best video+audio with preferred format, fallback to best single file
-                if ext == 'mp4':
-                    format_string = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
-                elif ext == 'webm':
-                    format_string = "bestvideo[ext=webm]+bestaudio[ext=webm]/bestvideo+bestaudio/best"
-                else:  # mkv or fallback
-                    format_string = "bestvideo+bestaudio/best"
+                # UPDATED: More permissive format selection with HLS fallbacks
+                format_string = (
+                    "bestvideo*+bestaudio/best"  # Try merging best video and audio
+                )
             elif quality == "worst":
                 format_string = "worstvideo+worstaudio/worst"
             else:
                 # Custom quality (e.g., "720p", "1080p") with multiple fallbacks
                 height = quality.replace('p', '')
-                # IMPORTANT: Try single-file formats FIRST (for videos without separate streams)
-                if ext == 'mp4':
-                    format_string = (
-                        f"best[height<={height}][ext=mp4]/"  # Try single mp4 file first
-                        f"best[height<={height}]/"
-                        f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/"
-                        f"bestvideo[height<={height}][ext=mp4]+bestaudio/"
-                        f"bestvideo[height<={height}]+bestaudio[ext=m4a]/"
-                        f"bestvideo[height<={height}]+bestaudio/"
-                        "best[ext=mp4]/"
-                        "best"
-                    )
-                elif ext == 'webm':
-                    format_string = (
-                        f"best[height<={height}][ext=webm]/"  # Try single webm file first
-                        f"best[height<={height}]/"
-                        f"bestvideo[height<={height}][ext=webm]+bestaudio[ext=webm]/"
-                        f"bestvideo[height<={height}][ext=webm]+bestaudio/"
-                        f"bestvideo[height<={height}]+bestaudio/"
-                        "best[ext=webm]/"
-                        "best"
-                    )
-                else:  # mkv or fallback
-                    format_string = (
-                        f"best[height<={height}]/"  # Try single file first
-                        f"bestvideo[height<={height}]+bestaudio/"
-                        "best"
-                    )
+                # UPDATED: More permissive selection allowing all formats
+                format_string = (
+                    f"bestvideo*[height<={height}]+bestaudio/best[height<={height}]/best"
+                )
         else:
             ext = format if format in ['mp4', 'webm', 'mkv'] else 'mp4'
-            # Use more permissive format strings with better fallbacks
-            # IMPORTANT: Try single-file formats FIRST (for videos without separate streams)
-            if ext == 'mp4':
-                format_string = (
-                    "best[ext=mp4]/"  # Try single mp4 file first
-                    "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
-                    "bestvideo[ext=mp4]+bestaudio/"
-                    "bestvideo+bestaudio[ext=m4a]/"
-                    "bestvideo+bestaudio/"
-                    "best"
-                )
-            elif ext == 'webm':
-                format_string = (
-                    "best[ext=webm]/"  # Try single webm file first
-                    "bestvideo[ext=webm]+bestaudio[ext=webm]/"
-                    "bestvideo[ext=webm]+bestaudio/"
-                    "bestvideo+bestaudio/"
-                    "best"
-                )
-            else:
-                format_string = "best/bestvideo+bestaudio"
+            # UPDATED: Simplified format selection - let yt-dlp pick best available
+            format_string = "bestvideo*+bestaudio/best"
 
         # Base options with anti-bot measures
         ydl_opts = self._get_base_opts()
@@ -302,10 +256,7 @@ class YouTubeDownloader:
             'progress_hooks': [self._progress_hook],
             'quiet': False,
             'no_warnings': False,
-            # Additional options to handle YouTube's format restrictions
-            'allow_unplayable_formats': False,  # Skip unplayable formats
-            'check_formats': 'selected',  # Only check selected format
-            'ignoreerrors': False,  # Don't ignore errors, but fallback will handle them
+            # Let yt-dlp handle format selection naturally without extra restrictions
         })
 
         # Add audio extraction for audio-only
