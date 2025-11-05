@@ -135,7 +135,7 @@ class YouTubeDownloader:
             'quiet': True,
             'no_warnings': True,
             'skip_download': True,  # Explicitly skip download for speed
-            'format': 'best',  # Don't be picky about format when just getting info
+            # Don't specify format when just getting info - avoids format validation errors
         })
 
         try:
