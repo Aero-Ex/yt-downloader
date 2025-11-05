@@ -225,7 +225,7 @@ class YouTubeDownloader:
         # Priority: Combined formats > Merged DASH > HLS as last resort
 
         # Supported video formats
-        VALID_VIDEO_FORMATS = ['mp4', 'webm', 'mkv', 'avi', 'mov', 'flv', '3gp']
+        VALID_VIDEO_FORMATS = ['mp4', 'webm', 'mkv']
         # Supported audio formats
         VALID_AUDIO_FORMATS = ['mp3', 'm4a', 'opus', 'flac', 'wav', 'ogg', 'aac', 'wma']
 
@@ -266,21 +266,10 @@ class YouTubeDownloader:
         })
 
         # Set merge output format for video (when merging separate video+audio streams)
+        # All supported formats (mp4, webm, mkv) are natively supported by yt-dlp
         if format_type == "video":
             video_format = format if format in VALID_VIDEO_FORMATS else 'mp4'
-
-            # Formats that work reliably with yt-dlp's merger
-            native_merge_formats = ['mp4', 'webm', 'mkv']
-
-            if video_format in native_merge_formats:
-                # These formats work perfectly with natural merging
-                ydl_opts['merge_output_format'] = video_format
-            else:
-                # For other formats (avi, mov, flv, 3gp):
-                # 1. First merge to MP4 (always works)
-                # 2. Then we'll convert manually using stream copy for speed
-                ydl_opts['merge_output_format'] = 'mp4'
-                # Don't add FFmpegVideoConvertor - we'll do it manually for speed
+            ydl_opts['merge_output_format'] = video_format
 
         # Add audio extraction for audio-only
         if format_type == "audio":
@@ -374,9 +363,9 @@ class YouTubeDownloader:
                     base_path = pathlib.Path(final_filename).parent / pathlib.Path(final_filename).stem
                     print(f"⚠ Searching for file with base: {base_path}")
 
-                    # Try to find the actual file
+                    # Try to find the actual file with supported formats
                     found = False
-                    for possible_ext in [format, 'mp4', 'webm', 'mkv', 'avi', 'mov', 'flv', '3gp']:
+                    for possible_ext in [format, 'mp4', 'webm', 'mkv']:
                         possible_file = str(base_path) + f'.{possible_ext}'
                         if os.path.exists(possible_file):
                             print(f"✓ Found file: {possible_file}")
@@ -393,77 +382,6 @@ class YouTubeDownloader:
                                 print(f"⚠ Available files in {dir_path}: {[f.name for f in files]}")
                         except Exception as e:
                             print(f"⚠ Error listing directory: {e}")
-
-                # Manual fast conversion for non-native formats (avi, mov, flv, 3gp)
-                # This uses stream copy which is ~100x faster than re-encoding
-                if format_type == "video" and format in ['avi', 'mov', 'flv', '3gp']:
-                    native_merge_formats = ['mp4', 'webm', 'mkv']
-                    if format not in native_merge_formats:
-                        # Check if we have an MP4 file that needs conversion
-                        import pathlib
-                        current_path = pathlib.Path(final_filename)
-                        if current_path.suffix == '.mp4' and format != 'mp4':
-                            # Source is MP4, target is different - need to convert
-                            source_file = final_filename
-                            target_file = str(current_path.with_suffix(f'.{format}'))
-                        elif os.path.exists(base_filename + '.mp4') and not os.path.exists(final_filename):
-                            # We have MP4 but expected different format
-                            source_file = base_filename + '.mp4'
-                            target_file = final_filename
-                        else:
-                            source_file = None
-
-                        if source_file and os.path.exists(source_file):
-                            import subprocess
-                            import time
-                            conversion_start = time.time()
-
-                            # Try stream copy first (instant if codecs are compatible)
-                            if not (start_time or end_time):
-                                print(f"🚀 Fast converting {source_file} to {format} using stream copy...")
-                                cmd = ['ffmpeg', '-i', source_file, '-c', 'copy', '-y', target_file]
-                            else:
-                                # For trimming, we need to re-encode
-                                print(f"⚠ Converting {source_file} to {format} (with trimming - will re-encode)...")
-                                cmd = ['ffmpeg', '-i', source_file, '-y', target_file]
-
-                            result = subprocess.run(
-                                cmd,
-                                capture_output=True,
-                                text=True
-                            )
-
-                            # If stream copy failed (incompatible codecs), re-encode with fast settings
-                            if result.returncode != 0:
-                                print(f"⚠ Stream copy failed (incompatible codecs), re-encoding with FAST settings...")
-                                print(f"   (This is a one-time process - expect ~30-60 seconds)")
-
-                                # Use fast encoding settings for quicker conversion
-                                # -c:v libx264 -preset ultrafast = fastest H.264 encoding
-                                # -crf 23 = good quality
-                                # -c:a libmp3lame -b:a 192k = MP3 audio at 192kbps
-                                cmd = [
-                                    'ffmpeg', '-i', source_file,
-                                    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
-                                    '-c:a', 'libmp3lame', '-b:a', '192k',
-                                    '-y', target_file
-                                ]
-
-                                result = subprocess.run(
-                                    cmd,
-                                    capture_output=True,
-                                    text=True,
-                                    check=True
-                                )
-
-                            elapsed = time.time() - conversion_start
-                            print(f"✓ Conversion completed in {elapsed:.1f}s!")
-
-                            # Delete the source MP4 file
-                            os.remove(source_file)
-                            print(f"Deleting original file {source_file} (pass -k to keep)")
-
-                            final_filename = target_file
 
                 print(f"✓ Returning filename: {final_filename}")
                 return final_filename
