@@ -269,24 +269,26 @@ class YouTubeDownloader:
         if format_type == "video":
             video_format = format if format in VALID_VIDEO_FORMATS else 'mp4'
 
-            # Most formats can be handled by yt-dlp's merger naturally
-            # Only 3GP needs special conversion handling
-            if video_format == '3gp':
-                # 3GP needs special handling - first merge to mp4, then convert
+            # Formats that work reliably with yt-dlp's merger
+            native_merge_formats = ['mp4', 'webm', 'mkv']
+
+            if video_format in native_merge_formats:
+                # These formats work perfectly with natural merging
+                ydl_opts['merge_output_format'] = video_format
+            else:
+                # For other formats (avi, mov, flv, 3gp):
+                # 1. First merge to MP4 (always works)
+                # 2. Then convert to target format
                 ydl_opts['merge_output_format'] = 'mp4'
-                # Add postprocessor to convert to 3GP
+
+                # Add FFmpegVideoConvertor postprocessor for conversion
                 if 'postprocessors' not in ydl_opts:
                     ydl_opts['postprocessors'] = []
 
                 ydl_opts['postprocessors'].append({
                     'key': 'FFmpegVideoConvertor',
-                    'preferedformat': '3gp',
+                    'preferedformat': video_format,
                 })
-            else:
-                # For all other formats (mp4, webm, mkv, avi, mov, flv)
-                # Let yt-dlp's merger handle it naturally
-                # This will automatically choose the best method (remux or convert as needed)
-                ydl_opts['merge_output_format'] = video_format
 
         # Add audio extraction for audio-only
         if format_type == "audio":
