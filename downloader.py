@@ -96,6 +96,7 @@ class YouTubeDownloader:
             'extractor_args': {
                 'youtube': {
                     'skip': ['hls'],  # Only skip HLS, allow all clients
+                    'player_client': ['android', 'web'],  # Try multiple clients for better compatibility
                 }
             },
         }
