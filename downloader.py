@@ -85,6 +85,17 @@ class YouTubeDownloader:
             'extract_flat': False,
         }
 
+        # Add proxy if configured (helps bypass datacenter IP detection)
+        proxy = os.environ.get('PROXY_URL')
+        if proxy:
+            opts['proxy'] = proxy
+            print(f"✓ Using proxy for requests")
+
+        # Geo-bypass options
+        geo_bypass_country = os.environ.get('GEO_BYPASS_COUNTRY')
+        if geo_bypass_country:
+            opts['geo_bypass_country'] = geo_bypass_country
+
         # Add cookies if file exists
         if self.cookies_file.exists():
             opts['cookiefile'] = str(self.cookies_file)

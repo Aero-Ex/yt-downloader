@@ -3,7 +3,7 @@
 Flask web application for YouTube Downloader
 """
 from flask import Flask, render_template, request, jsonify, send_file, session
-from flask_socketio import SocketIO, emit
+from flask_socketio import SocketIO, emit, join_room
 import os
 import sys
 import uuid
@@ -19,7 +19,18 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-
 app.config['DOWNLOAD_FOLDER'] = Path('downloads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max request size
 
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Configure SocketIO with longer timeouts and ping settings
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    ping_timeout=120,  # 2 minutes before considering connection dead
+    ping_interval=25,  # Send ping every 25 seconds to keep connection alive
+    async_mode='threading',
+    engineio_logger=False,
+    logger=False,
+    # Allow both websocket and polling, with polling as fallback
+    transports=['polling', 'websocket']
+)
 
 # Store active downloads
 active_downloads = {}
@@ -309,7 +320,9 @@ def download_file(download_id):
 @socketio.on('connect')
 def handle_connect():
     """Handle client connection"""
-    print(f'Client connected: {request.sid}')
+    # Automatically join the client to a room with their socket ID
+    join_room(request.sid)
+    print(f'Client connected and joined room: {request.sid}')
 
 
 @socketio.on('disconnect')
@@ -322,7 +335,8 @@ def handle_disconnect():
 def handle_join(data):
     """Handle room joining for progress updates"""
     room = request.sid
-    print(f'Client joined room: {room}')
+    join_room(room)
+    print(f'Client explicitly joined room: {room}')
 
 
 if __name__ == '__main__':

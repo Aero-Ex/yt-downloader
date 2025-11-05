@@ -700,6 +700,19 @@ body {
     transition: width 0.3s ease;
 }
 
+.progress-bar-fill.pulsing {
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.6;
+    }
+}
+
 .progress-info {
     display: flex;
     justify-content: space-between;

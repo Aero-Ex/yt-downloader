@@ -1,5 +1,13 @@
-// Initialize Socket.IO
-const socket = io();
+// Initialize Socket.IO with better timeout and reconnection settings
+const socket = io({
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    reconnectionAttempts: Infinity,
+    timeout: 120000,  // 2 minutes timeout to match server
+    transports: ['polling', 'websocket'],  // Use polling first (more stable for long downloads)
+    upgrade: false  // Don't try to upgrade to websocket during active downloads
+});
 
 // State management
 let currentDownloadId = null;
@@ -8,6 +16,8 @@ let selectedFormatType = 'video';
 let videoDurationSeconds = 0;
 let isDragging = false;
 let dragTarget = null;
+let downloadStatusPollInterval = null;
+let lastProgressUpdate = null;
 
 // DOM Elements
 const videoUrl = document.getElementById('videoUrl');
@@ -58,10 +68,38 @@ const manualTimeInputs = document.getElementById('manualTimeInputs');
 
 // Socket.IO Event Handlers
 socket.on('connect', () => {
-    console.log('Connected to server');
+    console.log('Connected to server, Socket ID:', socket.id);
+});
+
+socket.on('disconnect', (reason) => {
+    console.log('Disconnected from server. Reason:', reason);
+    if (reason === 'io server disconnect') {
+        // Server disconnected us, manually reconnect
+        socket.connect();
+    }
+    // Otherwise, socket will automatically try to reconnect
+});
+
+socket.on('reconnect', (attemptNumber) => {
+    console.log('Reconnected to server after', attemptNumber, 'attempts');
+});
+
+socket.on('reconnect_attempt', (attemptNumber) => {
+    console.log('Attempting to reconnect...', attemptNumber);
+});
+
+socket.on('reconnect_error', (error) => {
+    console.error('Reconnection error:', error);
+});
+
+socket.on('connect_error', (error) => {
+    console.error('Socket connection error:', error);
 });
 
 socket.on('download_progress', (data) => {
+    console.log('Download progress received:', data);
+    lastProgressUpdate = Date.now();
+
     if (data.status === 'downloading') {
         progressPercent.textContent = data.percent;
         progressSpeed.textContent = `Speed: ${data.speed}`;
@@ -79,14 +117,73 @@ socket.on('download_progress', (data) => {
 });
 
 socket.on('download_complete', (data) => {
+    console.log('Download complete received:', data);
+    stopPollingDownloadStatus();
     currentDownloadId = data.download_id;
     showSection('complete');
     downloadedFileName.textContent = data.filename;
 });
 
 socket.on('download_error', (data) => {
+    console.error('Download error received:', data);
+    stopPollingDownloadStatus();
     showError(data.error);
 });
+
+// Fallback polling function to check download status via REST API
+async function pollDownloadStatus() {
+    if (!currentDownloadId) return;
+
+    try {
+        const response = await fetch(`/api/download-status/${currentDownloadId}`);
+        const data = await response.json();
+
+        console.log('Polling download status:', data);
+
+        if (data.status === 'completed') {
+            stopPollingDownloadStatus();
+            showSection('complete');
+            downloadedFileName.textContent = data.filename;
+        } else if (data.status === 'error') {
+            stopPollingDownloadStatus();
+            showError(data.error);
+        } else if (data.status === 'downloading') {
+            // Show that download is active even without socket updates
+            progressStatus.textContent = 'Download in progress... Please wait';
+
+            // Add a pulsing animation to progress bar to show activity
+            if (!progressBarFill.classList.contains('pulsing')) {
+                progressBarFill.classList.add('pulsing');
+            }
+
+            // If we're not getting socket updates, at least show the bar is active
+            if (!lastProgressUpdate || (Date.now() - lastProgressUpdate > 5000)) {
+                progressBarFill.style.width = '50%'; // Show indeterminate progress
+                progressStatus.textContent = 'Downloading... (waiting for progress updates)';
+            }
+        }
+    } catch (error) {
+        console.error('Error polling download status:', error);
+    }
+}
+
+function startPollingDownloadStatus() {
+    console.log('Starting download status polling as fallback');
+    stopPollingDownloadStatus(); // Clear any existing interval
+    lastProgressUpdate = Date.now();
+    // Poll every 3 seconds
+    downloadStatusPollInterval = setInterval(pollDownloadStatus, 3000);
+}
+
+function stopPollingDownloadStatus() {
+    if (downloadStatusPollInterval) {
+        console.log('Stopping download status polling');
+        clearInterval(downloadStatusPollInterval);
+        downloadStatusPollInterval = null;
+        // Remove pulsing animation
+        progressBarFill.classList.remove('pulsing');
+    }
+}
 
 // Event Listeners
 fetchInfoBtn.addEventListener('click', fetchVideoInfo);
@@ -582,23 +679,30 @@ function displayVideoInfo(info) {
 }
 
 async function startDownload() {
+    console.log('Download button clicked!');
     const url = videoUrl.value.trim();
     const quality = qualitySelect.value;
     const format = formatSelect.value;
     const startTime = startTimeInput.value.trim();
     const endTime = endTimeInput.value.trim();
 
+    console.log('Download params:', { url, quality, format, formatType: selectedFormatType, startTime, endTime });
+    console.log('Socket ID:', socket.id);
+
     // Validate time format if provided
     if (startTime && !isValidTimeFormat(startTime)) {
+        console.error('Invalid start time format');
         showError('Invalid start time format. Use HH:MM:SS');
         return;
     }
 
     if (endTime && !isValidTimeFormat(endTime)) {
+        console.error('Invalid end time format');
         showError('Invalid end time format. Use HH:MM:SS');
         return;
     }
 
+    console.log('Showing progress section...');
     // Show progress section
     showSection('progress');
     resetProgress();
@@ -606,6 +710,7 @@ async function startDownload() {
     downloadBtn.disabled = true;
 
     try {
+        console.log('Sending download request to server...');
         const response = await fetch('/api/download', {
             method: 'POST',
             headers: {
@@ -622,7 +727,9 @@ async function startDownload() {
             }),
         });
 
+        console.log('Response received:', response.status);
         const data = await response.json();
+        console.log('Response data:', data);
 
         if (!response.ok) {
             throw new Error(data.error || 'Download failed');
@@ -630,8 +737,13 @@ async function startDownload() {
 
         currentDownloadId = data.download_id;
         progressStatus.textContent = 'Starting download...';
+        console.log('Download started with ID:', currentDownloadId);
+
+        // Start fallback polling in case socket connection drops
+        startPollingDownloadStatus();
 
     } catch (error) {
+        console.error('Download error:', error);
         showError(error.message);
         downloadBtn.disabled = false;
     }
@@ -697,6 +809,10 @@ function reset() {
     currentDownloadId = null;
     currentVideoInfo = null;
     videoDurationSeconds = 0;
+    lastProgressUpdate = null;
+
+    // Stop any active polling
+    stopPollingDownloadStatus();
 
     // Reset timeline
     handleStart.style.left = '0%';
