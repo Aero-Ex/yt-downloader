@@ -15,9 +15,20 @@ import uuid
 import json
 from pathlib import Path
 from threading import Thread
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
+import time
+import logging
 import yt_dlp
 
 from downloader import YouTubeDownloader, format_duration, format_size
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-this')
@@ -41,8 +52,19 @@ socketio = SocketIO(
     always_connect=True,
 )
 
-# Store active downloads
+# Store active downloads with TTL
 active_downloads = {}
+
+# Video info cache (URL -> {info, timestamp})
+video_info_cache = {}
+VIDEO_INFO_CACHE_TTL = 600  # 10 minutes
+
+# Thread pool for downloads (max 5 concurrent downloads)
+download_executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="download")
+
+# Cleanup configuration
+DOWNLOAD_TTL = 3600  # 1 hour - downloads older than this are removed
+CLEANUP_INTERVAL = 300  # Run cleanup every 5 minutes
 
 
 class WebDownloader(YouTubeDownloader):
@@ -81,15 +103,95 @@ class WebDownloader(YouTubeDownloader):
                 }, room=self.socket_id)
 
 
+def cleanup_old_downloads():
+    """Remove old downloads and their files from memory and disk"""
+    try:
+        now = datetime.now()
+        to_remove = []
+
+        for download_id, info in list(active_downloads.items()):
+            # Check if download has timestamp
+            if 'timestamp' in info:
+                age = (now - info['timestamp']).total_seconds()
+
+                # Remove if older than TTL
+                if age > DOWNLOAD_TTL:
+                    to_remove.append(download_id)
+
+                    # Delete file if it exists and download is completed
+                    if info.get('status') == 'completed' and 'filepath' in info:
+                        try:
+                            filepath = Path(info['filepath'])
+                            if filepath.exists():
+                                filepath.unlink()
+                                logger.info(f"Cleaned up old download file: {filepath}")
+                        except Exception as e:
+                            logger.error(f"Error deleting file {info['filepath']}: {e}")
+
+        # Remove from active downloads
+        for download_id in to_remove:
+            del active_downloads[download_id]
+            logger.info(f"Removed old download from memory: {download_id}")
+
+        if to_remove:
+            logger.info(f"Cleanup: Removed {len(to_remove)} old downloads")
+
+    except Exception as e:
+        logger.error(f"Error during cleanup: {e}")
+
+
+def cleanup_video_info_cache():
+    """Remove old entries from video info cache"""
+    try:
+        now = time.time()
+        to_remove = []
+
+        for url, cache_entry in list(video_info_cache.items()):
+            if now - cache_entry['timestamp'] > VIDEO_INFO_CACHE_TTL:
+                to_remove.append(url)
+
+        for url in to_remove:
+            del video_info_cache[url]
+
+        if to_remove:
+            logger.info(f"Cleaned up {len(to_remove)} cached video info entries")
+
+    except Exception as e:
+        logger.error(f"Error cleaning video info cache: {e}")
+
+
+def start_cleanup_thread():
+    """Start background thread for periodic cleanup"""
+    def cleanup_loop():
+        while True:
+            time.sleep(CLEANUP_INTERVAL)
+            cleanup_old_downloads()
+            cleanup_video_info_cache()
+
+    cleanup_thread = Thread(target=cleanup_loop, daemon=True)
+    cleanup_thread.start()
+    logger.info("Started cleanup background thread")
+
+
 @app.route('/')
 def index():
     """Render main page"""
     return render_template('index.html')
 
 
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'active_downloads': len(active_downloads),
+        'cached_videos': len(video_info_cache)
+    })
+
+
 @app.route('/api/video-info', methods=['POST'])
 def get_video_info():
-    """Get video information"""
+    """Get video information with caching"""
     try:
         data = request.get_json()
         url = data.get('url')
@@ -97,6 +199,16 @@ def get_video_info():
         if not url:
             return jsonify({'error': 'URL is required'}), 400
 
+        # Check cache first
+        now = time.time()
+        if url in video_info_cache:
+            cache_entry = video_info_cache[url]
+            if now - cache_entry['timestamp'] < VIDEO_INFO_CACHE_TTL:
+                logger.info(f"Cache hit for video info: {url}")
+                return jsonify(cache_entry['data'])
+
+        # Not in cache or expired, fetch new
+        logger.info(f"Cache miss for video info: {url}")
         downloader = YouTubeDownloader()
         info = downloader.get_video_info(url)
 
@@ -110,10 +222,17 @@ def get_video_info():
             'thumbnail': f"https://img.youtube.com/vi/{info['id']}/maxresdefault.jpg"
         }
 
+        # Cache the result
+        video_info_cache[url] = {
+            'data': response,
+            'timestamp': now
+        }
+
         return jsonify(response)
 
     except Exception as e:
         error_msg = str(e)
+        logger.error(f"Error getting video info: {error_msg}")
 
         # Check for bot detection error
         if 'Sign in to confirm' in error_msg or 'bot' in error_msg.lower():
@@ -181,7 +300,7 @@ def list_formats():
 
 @app.route('/api/download', methods=['POST'])
 def start_download():
-    """Start a download"""
+    """Start a download using thread pool"""
     try:
         data = request.get_json()
         url = data.get('url')
@@ -195,6 +314,10 @@ def start_download():
         if not url:
             return jsonify({'error': 'URL is required'}), 400
 
+        # Validate socket_id is from an active connection
+        # Note: We still accept socket_id from client for backwards compatibility,
+        # but we could enhance this with server-side tracking
+
         # Generate unique download ID
         download_id = str(uuid.uuid4())
 
@@ -202,9 +325,10 @@ def start_download():
         download_dir = app.config['DOWNLOAD_FOLDER']
         download_dir.mkdir(exist_ok=True)
 
-        # Start download in background thread
+        # Download task function
         def download_task():
             try:
+                logger.info(f"Starting download {download_id} for URL: {url}")
                 downloader = WebDownloader(
                     output_dir=str(download_dir),
                     socket_id=socket_id
@@ -223,11 +347,14 @@ def start_download():
                 if not os.path.exists(filename):
                     raise Exception(f"Download completed but file not found: {filename}")
 
-                active_downloads[download_id] = {
+                active_downloads[download_id].update({
                     'status': 'completed',
                     'filename': os.path.basename(filename),
-                    'filepath': filename
-                }
+                    'filepath': filename,
+                    'timestamp': datetime.now()
+                })
+
+                logger.info(f"Download {download_id} completed: {filename}")
 
                 if socket_id:
                     socketio.emit('download_complete', {
@@ -236,26 +363,28 @@ def start_download():
                     }, room=socket_id)
 
             except Exception as e:
-                active_downloads[download_id] = {
+                logger.error(f"Download {download_id} failed: {str(e)}")
+                active_downloads[download_id].update({
                     'status': 'error',
-                    'error': str(e)
-                }
+                    'error': str(e),
+                    'timestamp': datetime.now()
+                })
 
                 if socket_id:
                     socketio.emit('download_error', {
                         'error': str(e)
                     }, room=socket_id)
 
-        # Store download info
+        # Store download info with timestamp
         active_downloads[download_id] = {
             'status': 'downloading',
-            'url': url
+            'url': url,
+            'timestamp': datetime.now()
         }
 
-        # Start thread
-        thread = Thread(target=download_task)
-        thread.daemon = True
-        thread.start()
+        # Submit to thread pool (bounded concurrency)
+        download_executor.submit(download_task)
+        logger.info(f"Download {download_id} submitted to executor")
 
         return jsonify({
             'download_id': download_id,
@@ -263,6 +392,7 @@ def start_download():
         })
 
     except Exception as e:
+        logger.error(f"Error starting download: {str(e)}")
         return jsonify({'error': str(e)}), 400
 
 
@@ -331,13 +461,13 @@ def handle_connect():
     """Handle client connection"""
     # Automatically join the client to a room with their socket ID
     join_room(request.sid)
-    print(f'Client connected and joined room: {request.sid}')
+    logger.info(f'Client connected and joined room: {request.sid}')
 
 
 @socketio.on('disconnect')
 def handle_disconnect():
     """Handle client disconnection"""
-    print(f'Client disconnected: {request.sid}')
+    logger.info(f'Client disconnected: {request.sid}')
 
 
 @socketio.on('join')
@@ -345,13 +475,13 @@ def handle_join(data):
     """Handle room joining for progress updates"""
     room = request.sid
     join_room(room)
-    print(f'Client explicitly joined room: {room}')
+    logger.info(f'Client explicitly joined room: {room}')
 
 
 @socketio.on_error_default
 def default_error_handler(e):
     """Handle SocketIO errors gracefully"""
-    print(f'SocketIO error: {e}')
+    logger.error(f'SocketIO error: {e}')
     # Don't propagate errors to client, just log them
     return False
 
@@ -359,15 +489,35 @@ def default_error_handler(e):
 @socketio.on('connect_error')
 def handle_connect_error():
     """Handle connection errors"""
-    print('Client connection error')
+    logger.warning('Client connection error')
     return False
+
+
+# Initialize on module load (for production servers like Gunicorn)
+def init_app():
+    """Initialize application - called on startup"""
+    app.config['DOWNLOAD_FOLDER'].mkdir(exist_ok=True)
+    start_cleanup_thread()
+    logger.info("Application initialized")
+
+# Auto-initialize for production (Gunicorn, etc.)
+# This ensures cleanup thread starts even when not running with __main__
+try:
+    if not getattr(init_app, '_initialized', False):
+        init_app()
+        init_app._initialized = True
+except Exception as e:
+    logger.error(f"Error during app initialization: {e}")
 
 
 if __name__ == '__main__':
     # Create downloads directory
     app.config['DOWNLOAD_FOLDER'].mkdir(exist_ok=True)
 
+    # Start cleanup background thread
+    start_cleanup_thread()
+
     # Run the app
-    print("Starting YouTube Downloader Web Interface...")
-    print("Open your browser and navigate to: http://localhost:5000")
+    logger.info("Starting YouTube Downloader Web Interface...")
+    logger.info("Open your browser and navigate to: http://localhost:5000")
     socketio.run(app, debug=True, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)

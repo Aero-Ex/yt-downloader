@@ -130,12 +130,22 @@ socket.on('download_error', (data) => {
     showError(data.error);
 });
 
-// Fallback polling function to check download status via REST API
+// Optimized fallback polling - only poll if socket updates stop
 async function pollDownloadStatus() {
     if (!currentDownloadId) return;
 
+    // Only poll if we haven't received socket updates recently (10+ seconds)
+    const timeSinceLastUpdate = lastProgressUpdate ? (Date.now() - lastProgressUpdate) : Infinity;
+    if (timeSinceLastUpdate < 10000) {
+        // Socket is working fine, no need to poll
+        return;
+    }
+
     try {
         const response = await fetch(`/api/download-status/${currentDownloadId}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
         const data = await response.json();
 
         console.log('Polling download status:', data);
@@ -156,11 +166,9 @@ async function pollDownloadStatus() {
                 progressBarFill.classList.add('pulsing');
             }
 
-            // If we're not getting socket updates, at least show the bar is active
-            if (!lastProgressUpdate || (Date.now() - lastProgressUpdate > 5000)) {
-                progressBarFill.style.width = '50%'; // Show indeterminate progress
-                progressStatus.textContent = 'Downloading... (waiting for progress updates)';
-            }
+            // If we're not getting socket updates, show indeterminate progress
+            progressBarFill.style.width = '50%';
+            progressStatus.textContent = 'Downloading... (waiting for progress updates)';
         }
     } catch (error) {
         console.error('Error polling download status:', error);
@@ -171,8 +179,8 @@ function startPollingDownloadStatus() {
     console.log('Starting download status polling as fallback');
     stopPollingDownloadStatus(); // Clear any existing interval
     lastProgressUpdate = Date.now();
-    // Poll every 3 seconds
-    downloadStatusPollInterval = setInterval(pollDownloadStatus, 3000);
+    // Poll every 5 seconds (less aggressive than before)
+    downloadStatusPollInterval = setInterval(pollDownloadStatus, 5000);
 }
 
 function stopPollingDownloadStatus() {

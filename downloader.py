@@ -85,8 +85,8 @@ class YouTubeDownloader:
             # Extract formats without downloading (helps with rate limiting)
             'extract_flat': False,
 
-            # Performance optimizations
-            'concurrent_fragment_downloads': 8,  # Download up to 8 fragments at once
+            # Performance optimizations (tuned for YouTube)
+            'concurrent_fragment_downloads': 4,  # Optimal for YouTube (prevents throttling)
             'http_chunk_size': 10485760,  # 10MB chunks (YouTube's limit)
             'noprogress': False,  # We want progress updates
 

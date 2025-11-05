@@ -134,8 +134,10 @@ body {
 
 .btn-primary:hover:not(:disabled) {
     background: var(--primary-hover);
-    transform: translateY(-2px);
+    transform: translateY(-2px) translateZ(0);
     box-shadow: var(--shadow-lg);
+    /* GPU acceleration hint */
+    will-change: transform;
 }
 
 .btn-secondary {
@@ -451,7 +453,7 @@ body {
     bottom: 0;
 }
 
-/* YouTube-style handles */
+/* YouTube-style handles - optimized for performance */
 .timeline-handle {
     position: absolute;
     width: 12px;
@@ -459,7 +461,7 @@ body {
     background: #3ea6ff;
     top: 0;
     cursor: ew-resize;
-    transition: all 0.2s ease;
+    transition: transform 0.2s ease, width 0.2s ease, background 0.2s ease;
     z-index: 10;
     display: flex;
     align-items: center;
@@ -469,6 +471,10 @@ body {
     -webkit-user-select: none;
     -webkit-touch-callout: none;
     pointer-events: auto; /* Enable touch/click events on handles */
+    /* GPU acceleration for smoother dragging */
+    will-change: transform, left;
+    transform: translateZ(0);
+    backface-visibility: hidden;
 }
 
 .timeline-handle:hover {
@@ -706,6 +712,10 @@ body {
     border-radius: 6px;
     width: 0%;
     transition: width 0.3s ease;
+    /* GPU acceleration for smoother animations */
+    will-change: width;
+    transform: translateZ(0);
+    backface-visibility: hidden;
 }
 
 .progress-bar-fill.pulsing {
