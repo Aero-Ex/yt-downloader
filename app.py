@@ -344,8 +344,16 @@ def start_download():
                     end_time=end_time if end_time else None
                 )
 
+                logger.info(f"Download function returned filename: {filename}")
+
                 # Verify file exists
                 if not os.path.exists(filename):
+                    logger.error(f"Download completed but file not found: {filename}")
+                    # List files in download directory for debugging
+                    download_dir = Path(filename).parent
+                    if download_dir.exists():
+                        files = list(download_dir.glob('*'))
+                        logger.info(f"Files in {download_dir}: {files}")
                     raise Exception(f"Download completed but file not found: {filename}")
 
                 active_downloads[download_id].update({
@@ -355,7 +363,7 @@ def start_download():
                     'timestamp': datetime.now()
                 })
 
-                logger.info(f"Download {download_id} completed: {filename}")
+                logger.info(f"Download {download_id} completed successfully: {filename}")
 
                 if socket_id:
                     socketio.emit('download_complete', {

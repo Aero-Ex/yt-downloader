@@ -373,6 +373,20 @@ class YouTubeDownloader:
                     # Use original extension
                     final_filename = ydl.prepare_filename(info)
 
+                # Verify the file exists at expected location
+                # (postprocessors might have created it with a different extension)
+                if not os.path.exists(final_filename):
+                    # Check for possible alternative extensions after postprocessing
+                    import pathlib
+                    base_path = pathlib.Path(final_filename).parent / pathlib.Path(final_filename).stem
+
+                    # Try to find the actual file
+                    for possible_ext in [format, 'mp4', 'webm', 'mkv', 'avi', 'mov', 'flv', '3gp']:
+                        possible_file = str(base_path) + f'.{possible_ext}'
+                        if os.path.exists(possible_file):
+                            final_filename = possible_file
+                            break
+
                 return final_filename
         except yt_dlp.utils.DownloadError as e:
             error_msg = str(e)
