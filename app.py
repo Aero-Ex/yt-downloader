@@ -34,7 +34,11 @@ socketio = SocketIO(
     engineio_logger=False,
     logger=False,
     # Allow both websocket and polling, with polling as fallback
-    transports=['polling', 'websocket']
+    transports=['polling', 'websocket'],
+    # Session management settings
+    manage_session=False,  # Don't manage sessions server-side (stateless)
+    # Allow reconnection with new session if old one is invalid
+    always_connect=True,
 )
 
 # Store active downloads
@@ -342,6 +346,21 @@ def handle_join(data):
     room = request.sid
     join_room(room)
     print(f'Client explicitly joined room: {room}')
+
+
+@socketio.on_error_default
+def default_error_handler(e):
+    """Handle SocketIO errors gracefully"""
+    print(f'SocketIO error: {e}')
+    # Don't propagate errors to client, just log them
+    return False
+
+
+@socketio.on('connect_error')
+def handle_connect_error():
+    """Handle connection errors"""
+    print('Client connection error')
+    return False
 
 
 if __name__ == '__main__':

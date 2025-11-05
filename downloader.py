@@ -130,13 +130,30 @@ class YouTubeDownloader:
         Returns:
             Dictionary with video information
         """
-        ydl_opts = self._get_base_opts()
-        ydl_opts.update({
+        # Use minimal options for info extraction to avoid format validation errors
+        ydl_opts = {
             'quiet': True,
             'no_warnings': True,
-            'skip_download': True,  # Explicitly skip download for speed
-            # Don't specify format when just getting info - avoids format validation errors
-        })
+            'skip_download': True,
+            'extract_flat': False,
+            'no_check_certificate': True,
+            # Basic anti-bot measures
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'http_headers': {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-us,en;q=0.5',
+                'Sec-Fetch-Mode': 'navigate',
+            },
+        }
+
+        # Add cookies if available (important for accessing video info)
+        if self.cookies_file.exists():
+            ydl_opts['cookiefile'] = str(self.cookies_file)
+
+        # Add proxy if configured
+        proxy = os.environ.get('PROXY_URL')
+        if proxy:
+            ydl_opts['proxy'] = proxy
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -382,7 +399,12 @@ class YouTubeDownloader:
             # If format not available, try with simple "best" format as last resort
             if "Requested format is not available" in error_msg or "No video formats found" in error_msg:
                 print(f"⚠ Requested format not available, retrying with best available format...")
-                ydl_opts['format'] = 'best'  # Simplest fallback
+                # Remove all format-related postprocessors and use simplest format
+                ydl_opts['format'] = 'best'
+                # Remove check_formats to avoid validation
+                ydl_opts.pop('check_formats', None)
+                ydl_opts.pop('allow_unplayable_formats', None)
+                # Keep postprocessors for format conversion if needed
                 try:
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         info = ydl.extract_info(url, download=True)
