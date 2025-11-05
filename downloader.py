@@ -268,7 +268,40 @@ class YouTubeDownloader:
         # Set merge output format for video (when merging separate video+audio streams)
         if format_type == "video":
             video_format = format if format in VALID_VIDEO_FORMATS else 'mp4'
-            ydl_opts['merge_output_format'] = video_format
+
+            # Formats that work well with direct merging (just container remuxing)
+            merge_compatible_formats = ['mp4', 'webm', 'mkv']
+
+            # Formats that can also use direct merging with copy codec (fast, no re-encoding)
+            # These work by copying the streams into a different container
+            extended_merge_formats = ['avi', 'mov', 'flv']
+
+            if video_format in merge_compatible_formats:
+                # Just merge streams into the container, no re-encoding
+                ydl_opts['merge_output_format'] = video_format
+            elif video_format in extended_merge_formats:
+                # These formats work with stream copy (remuxing without re-encoding)
+                ydl_opts['merge_output_format'] = video_format
+                # Use copy codec to avoid re-encoding (much faster)
+                ydl_opts['postprocessor_args'] = {
+                    'ffmpeg': [
+                        '-c', 'copy',  # Copy all streams without re-encoding
+                    ]
+                }
+            elif video_format == '3gp':
+                # 3GP needs special handling - convert from mp4
+                ydl_opts['merge_output_format'] = 'mp4'
+                # Add postprocessor to convert to 3GP
+                if 'postprocessors' not in ydl_opts:
+                    ydl_opts['postprocessors'] = []
+
+                ydl_opts['postprocessors'].append({
+                    'key': 'FFmpegVideoConvertor',
+                    'preferedformat': '3gp',
+                })
+            else:
+                # Fallback to mp4
+                ydl_opts['merge_output_format'] = 'mp4'
 
         # Add audio extraction for audio-only
         if format_type == "audio":
@@ -298,6 +331,12 @@ class YouTubeDownloader:
                 ffmpeg_args.extend(['-ss', start_time])
             if end_time:
                 ffmpeg_args.extend(['-to', end_time])
+
+            # Merge with existing postprocessor_args if they exist (e.g., from format conversion)
+            if 'postprocessor_args' in ydl_opts and 'ffmpeg' in ydl_opts['postprocessor_args']:
+                # Prepend existing args (codec settings) before trimming args
+                existing_args = ydl_opts['postprocessor_args']['ffmpeg']
+                ffmpeg_args = existing_args + ffmpeg_args
 
             ydl_opts['postprocessor_args'] = {
                 'ffmpeg': ffmpeg_args
