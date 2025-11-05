@@ -91,12 +91,12 @@ class YouTubeDownloader:
             'noprogress': False,  # We want progress updates
 
             # YouTube-specific optimizations
-            # Note: Removed restrictive player_client settings to ensure compatibility
-            # with all video types (some videos only work with certain clients)
+            # Use iOS and mobile web clients which handle SABR streaming and cookies better
+            # iOS client works well with cookies and doesn't have signature extraction issues
             'extractor_args': {
                 'youtube': {
-                    'skip': ['hls'],  # Only skip HLS, allow all clients
-                    'player_client': ['android', 'web'],  # Try multiple clients for better compatibility
+                    'skip': ['hls'],  # Skip HLS streams
+                    'player_client': ['ios', 'mweb', 'web'],  # iOS and mobile web work better with cookies
                 }
             },
         }
