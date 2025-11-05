@@ -226,10 +226,23 @@ document.addEventListener('mousemove', onDrag);
 document.addEventListener('mouseup', stopDragging);
 
 // Touch support for mobile
-handleStart.addEventListener('touchstart', (e) => startDragging(e.touches[0], 'start'));
-handleEnd.addEventListener('touchstart', (e) => startDragging(e.touches[0], 'end'));
+handleStart.addEventListener('touchstart', (e) => {
+    e.preventDefault(); // Prevent scrolling while dragging
+    startDragging(e.touches[0], 'start');
+}, { passive: false });
 
-document.addEventListener('touchmove', (e) => onDrag(e.touches[0]));
+handleEnd.addEventListener('touchstart', (e) => {
+    e.preventDefault(); // Prevent scrolling while dragging
+    startDragging(e.touches[0], 'end');
+}, { passive: false });
+
+document.addEventListener('touchmove', (e) => {
+    if (isDragging) {
+        e.preventDefault(); // Prevent scrolling while dragging
+        onDrag(e.touches[0]);
+    }
+}, { passive: false });
+
 document.addEventListener('touchend', stopDragging);
 
 // Manual time input sync
@@ -846,6 +859,7 @@ function reset() {
 function isValidYouTubeUrl(url) {
     const patterns = [
         /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)[\w-]+/,
+        /^(https?:\/\/)?(www\.)?youtube\.com\/shorts\/[\w-]+/,  // YouTube Shorts
         /^(https?:\/\/)?(www\.)?youtube\.com\/playlist\?list=[\w-]+/
     ];
     return patterns.some(pattern => pattern.test(url));
@@ -989,6 +1003,7 @@ function onPlayerStateChange(event) {
 function getVideoIdFromUrl(url) {
     const patterns = [
         /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})(?:[?&]|$)/,
+        /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})(?:[?&]|$)/,  // YouTube Shorts
         /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})(?:[?&]|$)/
     ];
 
