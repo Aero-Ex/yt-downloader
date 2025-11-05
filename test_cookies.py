@@ -33,7 +33,7 @@ def test_cookies():
 
     # Test with a YouTube video
     print("Testing with YouTube video...")
-    test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    test_url = "https://youtu.be/gwEBjgCe5aY?si=lpWYOxW3K8tXS36q"
 
     dl = YouTubeDownloader()
 

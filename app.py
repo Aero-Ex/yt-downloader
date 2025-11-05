@@ -327,4 +327,4 @@ if __name__ == '__main__':
     # Run the app
     print("Starting YouTube Downloader Web Interface...")
     print("Open your browser and navigate to: http://localhost:5000")
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)

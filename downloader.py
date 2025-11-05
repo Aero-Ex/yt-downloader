@@ -39,6 +39,7 @@ class YouTubeDownloader:
                 # Decode and write cookies
                 cookies_content = base64.b64decode(cookies_env).decode('utf-8')
                 self.cookies_file.write_text(cookies_content)
+                print(f"✓ Cookies loaded from YOUTUBE_COOKIES_BASE64 environment variable")
                 return
             except Exception as e:
                 print(f"Warning: Failed to load cookies from environment: {e}")
@@ -51,12 +52,17 @@ class YouTubeDownloader:
                 cookies_dir.mkdir(exist_ok=True)
                 self.cookies_file = cookies_dir / 'youtube.txt'
                 self.cookies_file.write_text(cookies_content)
+                print(f"✓ Cookies loaded from YOUTUBE_COOKIES environment variable")
                 return
             except Exception as e:
                 print(f"Warning: Failed to load cookies from environment: {e}")
 
         # Method 3: Use existing file
         self.cookies_file = Path(__file__).parent / 'cookies' / 'youtube.txt'
+        if self.cookies_file.exists():
+            print(f"✓ Cookies file found: {self.cookies_file}")
+        else:
+            print(f"⚠ WARNING: Cookies file not found: {self.cookies_file}")
 
     def _get_base_opts(self) -> Dict:
         """Get base yt-dlp options with cookies and anti-bot measures"""
@@ -68,6 +74,9 @@ class YouTubeDownloader:
         # Add cookies if file exists
         if self.cookies_file.exists():
             opts['cookiefile'] = str(self.cookies_file)
+            print(f"✓ Using cookies file: {self.cookies_file}")
+        else:
+            print(f"⚠ WARNING: Cookies file does not exist, requests may fail: {self.cookies_file}")
 
         return opts
 
