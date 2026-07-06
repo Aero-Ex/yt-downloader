@@ -53,7 +53,15 @@ class YouTubeDownloader:
             except Exception as e:
                 print(f"Warning: Failed to load cookies from environment: {e}")
 
-        # Method 3: Use existing file
+        # Method 3: Check for Render Secret File
+        secret_file = Path('/etc/secrets/youtube.txt')
+        if secret_file.exists():
+            self.cookies_file = Path(__file__).parent / 'youtube.txt'
+            self.cookies_file.write_text(secret_file.read_text())
+            print(f"✓ Cookies copied from Render Secret File to: {self.cookies_file}")
+            return
+
+        # Method 4: Use existing local file
         self.cookies_file = Path(__file__).parent / 'youtube.txt'
         if self.cookies_file.exists():
             print(f"✓ Cookies file found: {self.cookies_file}")
@@ -63,15 +71,7 @@ class YouTubeDownloader:
     def _get_base_opts(self) -> Dict:
         """Get base yt-dlp options with cookies and anti-bot measures"""
         opts = {
-            # Anti-bot measures
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-
-            # Additional anti-bot headers
-            'http_headers': {
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-us,en;q=0.5',
-                'Sec-Fetch-Mode': 'navigate',
-            },
+            # Network options - OPTIMIZED FOR SPEED
 
             # Network options - OPTIMIZED FOR SPEED
             # Only use minimal delays when cookies are present
@@ -95,7 +95,7 @@ class YouTubeDownloader:
             # HLS formats are actually useful as fallbacks when DASH fails
             'extractor_args': {
                 'youtube': {
-                    # Don't skip any formats - we need all options available
+                    'player_client': ['ios', 'android', 'web']
                 }
             },
         }
@@ -130,30 +130,16 @@ class YouTubeDownloader:
         Returns:
             Dictionary with video information
         """
-        # Use minimal options for info extraction to avoid format validation errors
-        ydl_opts = {
+        # Get base options which include cookies, proxy, and anti-bot extractor_args
+        ydl_opts = self._get_base_opts()
+        
+        # Add overrides for info extraction
+        ydl_opts.update({
             'quiet': True,
             'no_warnings': True,
             'skip_download': True,
-            'extract_flat': False,
             'no_check_certificate': True,
-            # Basic anti-bot measures
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'http_headers': {
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-us,en;q=0.5',
-                'Sec-Fetch-Mode': 'navigate',
-            },
-        }
-
-        # Add cookies if available (important for accessing video info)
-        if self.cookies_file.exists():
-            ydl_opts['cookiefile'] = str(self.cookies_file)
-
-        # Add proxy if configured
-        proxy = os.environ.get('PROXY_URL')
-        if proxy:
-            ydl_opts['proxy'] = proxy
+        })
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
